@@ -7,6 +7,23 @@ import { runQuery, getAll } from '../config/database.js';
 
 // Create reusable transporter
 const createTransporter = () => {
+    if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+        return null;
+    }
+
+    // Use Gmail service optimization if user is on Gmail
+    if (process.env.SMTP_HOST?.includes('gmail.com') || process.env.SMTP_USER?.includes('gmail.com')) {
+        return nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+                user: process.env.SMTP_USER,
+                pass: process.env.SMTP_PASS,
+            },
+            connectionTimeout: 10000, // 10 seconds
+            greetingTimeout: 10000,
+        });
+    }
+
     const config = {
         host: process.env.SMTP_HOST,
         port: parseInt(process.env.SMTP_PORT || '587'),
@@ -15,11 +32,8 @@ const createTransporter = () => {
             user: process.env.SMTP_USER,
             pass: process.env.SMTP_PASS,
         },
+        connectionTimeout: 10000,
     };
-
-    if (!config.auth.user || !config.auth.pass) {
-        return null;
-    }
 
     return nodemailer.createTransport(config);
 };
