@@ -31,19 +31,6 @@ const ConfirmationPage: React.FC<ConfirmationPageProps> = ({ referenceId, onNavi
           <p className="text-gray-500 text-sm mt-4 font-medium italic">Save this ID to check your application status later.</p>
         </div>
 
-        <div className="bg-green-50 border-2 border-green-200 rounded-3xl p-6 mb-8 group hover:scale-[1.02] transition-transform">
-          <p className="text-green-800 font-bold mb-4 uppercase tracking-widest text-sm">Action Required: Join the HUDT Community</p>
-          <a
-            href="https://chat.whatsapp.com/JIyFdFsw3t5JT2C7vEBYoq"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-3 px-8 py-4 bg-[#25D366] text-white font-black rounded-2xl hover:bg-[#128C7E] transition-all shadow-xl text-lg animate-pulse"
-          >
-            💬 JOIN HUDT NOW
-          </a>
-          <p className="text-gray-500 text-xs mt-4 font-medium italic">Click above to join our official WhatsApp group for instant updates.</p>
-        </div>
-
         <div className="bg-purple-50 p-6 rounded-2xl text-left mb-10 space-y-4">
           <h4 className="font-black text-purple-900 text-lg flex items-center gap-2">
             <span>🚀</span> What Happens Next?
@@ -51,8 +38,8 @@ const ConfirmationPage: React.FC<ConfirmationPageProps> = ({ referenceId, onNavi
           <ul className="space-y-3">
             {[
               "Our team will review your application within 48 hours",
-              "Updates will be posted in the WhatsApp group",
-              "Check status anytime using your reference number",
+              "You can check your status anytime using your reference number",
+              "Maintain positive energy and prepare for potential auditions!",
               "Prepare to showcase your unique talents!"
             ].map((text, i) => (
               <li key={i} className="flex items-start gap-2 text-sm text-gray-700 font-medium">
