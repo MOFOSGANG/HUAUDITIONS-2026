@@ -17,6 +17,9 @@ const __dirname = dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Trust reverse proxy (Render/Vercel) for rate limiting
+app.set('trust proxy', 1);
+
 // ==================== MIDDLEWARE ====================
 
 // CORS configuration - allow frontend origins
