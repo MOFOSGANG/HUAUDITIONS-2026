@@ -1,6 +1,6 @@
 import express from 'express';
 import bcrypt from 'bcryptjs';
-import { getOne, getAll, runQuery } from '../config/database.js';
+import { supabase } from '../config/database.js';
 import { authenticateToken, generateToken } from '../middleware/auth.js';
 import { loginLimiter } from '../middleware/rateLimit.js';
 import { sendEmail } from '../utils/emailService.js';
@@ -14,7 +14,7 @@ const router = express.Router();
  * POST /api/admin/login
  * Admin authentication
  */
-router.post('/login', loginLimiter, (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
     try {
         const { username, password } = req.body;
 
@@ -26,9 +26,13 @@ router.post('/login', loginLimiter, (req, res) => {
             });
         }
 
-        const admin = getOne('SELECT * FROM admins WHERE username = ?', [username]);
+        const { data: admin, error } = await supabase
+            .from('admins')
+            .select('*')
+            .eq('username', username)
+            .single();
 
-        if (!admin || !bcrypt.compareSync(password, admin.password_hash)) {
+        if (error || !admin || !bcrypt.compareSync(password, admin.password_hash)) {
             return res.status(401).json({
                 success: false,
                 error: 'Invalid credentials',
@@ -38,7 +42,7 @@ router.post('/login', loginLimiter, (req, res) => {
 
         // Update last login
         const now = new Date().toISOString();
-        runQuery('UPDATE admins SET last_login = ? WHERE id = ?', [now, admin.id]);
+        await supabase.from('admins').update({ last_login: now }).eq('id', admin.id);
 
         // Generate token
         const token = generateToken(admin);
@@ -66,140 +70,58 @@ router.post('/login', loginLimiter, (req, res) => {
 
 /**
  * POST /api/admin/logout
- * Admin logout (client-side token removal)
  */
 router.post('/logout', authenticateToken, (req, res) => {
-    res.json({
-        success: true,
-        message: 'Logged out successfully'
-    });
+    res.json({ success: true, message: 'Logged out successfully' });
 });
 
 // ==================== DASHBOARD ROUTES ====================
 
 /**
  * GET /api/admin/dashboard/stats
- * Get dashboard statistics
  */
-router.get('/dashboard/stats', authenticateToken, (req, res) => {
+router.get('/dashboard/stats', authenticateToken, async (req, res) => {
     try {
         // Total applications
-        const totalAppsResult = getOne('SELECT COUNT(*) as count FROM applications');
-        const totalApps = totalAppsResult?.count || 0;
+        const { count: totalApps } = await supabase
+            .from('applications')
+            .select('*', { count: 'exact', head: true });
 
         // Status counts
-        const statusCounts = getAll(`
-      SELECT status, COUNT(*) as count 
-      FROM applications 
-      GROUP BY status
-    `);
+        const { data: allApps } = await supabase.from('applications').select('status, talents, department, level');
 
         const statusMap = {};
         VALID_STATUSES.forEach(s => statusMap[s] = 0);
-        statusCounts.forEach(row => {
-            statusMap[row.status] = row.count;
-        });
 
-        // Talent counts
-        const allApps = getAll('SELECT talents FROM applications');
         const talentCounts = {};
-        allApps.forEach(app => {
-            try {
-                const talents = JSON.parse(app.talents || '[]');
-                talents.forEach(talent => {
-                    talentCounts[talent] = (talentCounts[talent] || 0) + 1;
-                });
-            } catch (e) { }
-        });
-
-        // Department counts
-        const deptCounts = getAll(`
-      SELECT department, COUNT(*) as count 
-      FROM applications 
-      GROUP BY department 
-      ORDER BY count DESC
-    `);
-
         const departmentMap = {};
-        deptCounts.forEach(row => {
-            departmentMap[row.department] = row.count;
-        });
-
-        // Level counts
-        const levelCounts = getAll(`
-      SELECT level, COUNT(*) as count 
-      FROM applications 
-      GROUP BY level 
-      ORDER BY level
-    `);
-
         const levelMap = {};
-        levelCounts.forEach(row => {
-            levelMap[row.level] = row.count;
+
+        (allApps || []).forEach(app => {
+            statusMap[app.status] = (statusMap[app.status] || 0) + 1;
+            departmentMap[app.department] = (departmentMap[app.department] || 0) + 1;
+            levelMap[app.level] = (levelMap[app.level] || 0) + 1;
+            (app.talents || []).forEach(t => {
+                talentCounts[t] = (talentCounts[t] || 0) + 1;
+            });
         });
 
-        // Recent applications (last 10)
-        const recentApps = getAll(`
-      SELECT id, ref_number, full_name, email, department, status, submitted_at
-      FROM applications 
-      ORDER BY submitted_at DESC 
-      LIMIT 10
-    `);
-
-        // Applications timeline (last 30 days)
-        const timeline = getAll(`
-      SELECT DATE(submitted_at) as date, COUNT(*) as count
-      FROM applications
-      WHERE submitted_at >= datetime('now', '-30 days')
-      GROUP BY DATE(submitted_at)
-      ORDER BY date
-    `);
-
-        // Today's count
-        const todayResult = getOne(`
-      SELECT COUNT(*) as count FROM applications 
-      WHERE DATE(submitted_at) = DATE('now')
-    `);
-        const todayCount = todayResult?.count || 0;
-
-        // This week's count
-        const weekResult = getOne(`
-      SELECT COUNT(*) as count FROM applications 
-      WHERE submitted_at >= datetime('now', '-7 days')
-    `);
-        const weekCount = weekResult?.count || 0;
-
-        // This month's count
-        const monthResult = getOne(`
-      SELECT COUNT(*) as count FROM applications 
-      WHERE submitted_at >= datetime('now', '-30 days')
-    `);
-        const monthCount = monthResult?.count || 0;
-
-        // Average rating (for rated applications)
-        const avgRatingResult = getOne(`
-      SELECT AVG(rating) as avg FROM applications WHERE rating > 0
-    `);
-        const avgRating = avgRatingResult?.avg;
-
-        // Acceptance rate
-        const acceptedCount = statusMap['Accepted'] || 0;
-        const acceptanceRate = totalApps > 0
-            ? ((acceptedCount / totalApps) * 100).toFixed(1)
-            : 0;
+        // Recent applications
+        const { data: recentApps } = await supabase
+            .from('applications')
+            .select('id, ref_number, full_name, email, department, status, submitted_at')
+            .order('submitted_at', { ascending: false })
+            .limit(10);
 
         res.json({
             success: true,
             stats: {
-                totalApplications: totalApps,
-                applicationsToday: todayCount,
-                applicationsThisWeek: weekCount,
-                applicationsThisMonth: monthCount,
+                totalApplications: totalApps || 0,
                 statusCounts: statusMap,
                 talentCounts,
                 departmentCounts: departmentMap,
                 levelCounts: levelMap,
-                recentApplications: recentApps.map(app => ({
+                recentApplications: (recentApps || []).map(app => ({
                     id: app.id,
                     refNumber: app.ref_number,
                     fullName: app.full_name,
@@ -207,124 +129,45 @@ router.get('/dashboard/stats', authenticateToken, (req, res) => {
                     department: app.department,
                     status: app.status,
                     submittedAt: app.submitted_at
-                })),
-                applicationsTimeline: timeline,
-                averageRating: avgRating ? parseFloat(avgRating.toFixed(1)) : null,
-                acceptanceRate: parseFloat(acceptanceRate)
+                }))
             }
         });
 
     } catch (error) {
         console.error('Dashboard stats error:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to fetch dashboard stats',
-            code: 'SERVER_ERROR'
-        });
+        res.status(500).json({ success: false, error: 'Failed to fetch stats', code: 'SERVER_ERROR' });
     }
 });
 
-// ==================== APPLICATION MANAGEMENT ROUTES ====================
+// ==================== APPLICATION MANAGEMENT ====================
 
 /**
  * GET /api/admin/applications
- * Get all applications with filtering, searching, and pagination
  */
-router.get('/applications', authenticateToken, (req, res) => {
+router.get('/applications', authenticateToken, async (req, res) => {
     try {
-        const {
-            search,
-            status,
-            department,
-            level,
-            talent,
-            dateFrom,
-            dateTo,
-            sortBy = 'submitted_at',
-            sortOrder = 'desc',
-            page = 1,
-            limit = 20
-        } = req.query;
+        const { search, status, department, level, page = 1, limit = 20 } = req.query;
 
-        let whereClauses = [];
-        let params = [];
+        let query = supabase.from('applications').select('*', { count: 'exact' });
 
-        // Search filter
         if (search) {
-            whereClauses.push(`(
-        full_name LIKE ? OR 
-        email LIKE ? OR 
-        phone LIKE ? OR 
-        ref_number LIKE ?
-      )`);
-            const searchTerm = `%${search}%`;
-            params.push(searchTerm, searchTerm, searchTerm, searchTerm);
+            query = query.or(`full_name.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%,ref_number.ilike.%${search}%`);
         }
+        if (status && status !== 'All') query = query.eq('status', status);
+        if (department && department !== 'All') query = query.eq('department', department);
+        if (level && level !== 'All') query = query.eq('level', level);
 
-        // Status filter
-        if (status && status !== 'All') {
-            whereClauses.push('status = ?');
-            params.push(status);
-        }
-
-        // Department filter
-        if (department && department !== 'All') {
-            whereClauses.push('department = ?');
-            params.push(department);
-        }
-
-        // Level filter
-        if (level && level !== 'All') {
-            whereClauses.push('level = ?');
-            params.push(level);
-        }
-
-        // Talent filter
-        if (talent && talent !== 'All') {
-            whereClauses.push('talents LIKE ?');
-            params.push(`%"${talent}"%`);
-        }
-
-        // Date filters
-        if (dateFrom) {
-            whereClauses.push('DATE(submitted_at) >= ?');
-            params.push(dateFrom);
-        }
-        if (dateTo) {
-            whereClauses.push('DATE(submitted_at) <= ?');
-            params.push(dateTo);
-        }
-
-        const whereClause = whereClauses.length > 0
-            ? 'WHERE ' + whereClauses.join(' AND ')
-            : '';
-
-        // Validate sort column
-        const validSortColumns = ['submitted_at', 'full_name', 'email', 'department', 'level', 'status', 'rating', 'ref_number'];
-        const sortColumn = validSortColumns.includes(sortBy) ? sortBy : 'submitted_at';
-        const order = sortOrder.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
-
-        // Get total count
-        const countResult = getOne(`
-      SELECT COUNT(*) as count FROM applications ${whereClause}
-    `, params);
-
-        const totalCount = countResult?.count || 0;
         const pageNum = Math.max(1, parseInt(page));
         const limitNum = Math.min(100, Math.max(1, parseInt(limit)));
         const offset = (pageNum - 1) * limitNum;
-        const totalPages = Math.ceil(totalCount / limitNum);
 
-        // Get applications
-        const applications = getAll(`
-      SELECT * FROM applications 
-      ${whereClause}
-      ORDER BY ${sortColumn} ${order}
-      LIMIT ? OFFSET ?
-    `, [...params, limitNum, offset]);
+        query = query.order('submitted_at', { ascending: false }).range(offset, offset + limitNum - 1);
 
-        // Parse JSON fields
-        const parsedApps = applications.map(app => ({
+        const { data, count, error } = await query;
+
+        if (error) throw error;
+
+        const parsedApps = (data || []).map(app => ({
             id: app.id,
             refNumber: app.ref_number,
             fullName: app.full_name,
@@ -332,123 +175,111 @@ router.get('/applications', authenticateToken, (req, res) => {
             phone: app.phone,
             department: app.department,
             level: app.level,
-            talents: JSON.parse(app.talents || '[]'),
+            talents: app.talents || [],
             instruments: app.instruments,
             otherTalent: app.other_talent,
             previousExperience: app.previous_experience,
             experienceDetails: app.experience_details,
             motivation: app.motivation,
             hopesToGain: app.hopes_to_gain,
-            availability: JSON.parse(app.availability || '[]'),
+            availability: app.availability || [],
             auditionSlot: app.audition_slot,
             status: app.status,
             adminNotes: app.admin_notes,
             rating: app.rating,
-            tags: JSON.parse(app.tags || '[]'),
+            tags: app.tags || [],
             submittedAt: app.submitted_at,
             updatedAt: app.updated_at,
-            statusHistory: JSON.parse(app.status_history || '[]')
+            statusHistory: app.status_history || []
         }));
 
         res.json({
             success: true,
             applications: parsedApps,
-            totalCount,
+            totalCount: count || 0,
             page: pageNum,
-            totalPages,
+            totalPages: Math.ceil((count || 0) / limitNum),
             limit: limitNum
         });
 
     } catch (error) {
         console.error('Get applications error:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to fetch applications',
-            code: 'SERVER_ERROR'
-        });
+        res.status(500).json({ success: false, error: 'Failed to fetch applications', code: 'SERVER_ERROR' });
     }
 });
 
 /**
  * GET /api/admin/applications/:id
- * Get single application details
  */
-router.get('/applications/:id', authenticateToken, (req, res) => {
+router.get('/applications/:id', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params;
 
-        const app = getOne('SELECT * FROM applications WHERE id = ?', [id]);
+        const { data: app, error } = await supabase
+            .from('applications')
+            .select('*')
+            .eq('id', id)
+            .single();
 
-        if (!app) {
-            return res.status(404).json({
-                success: false,
-                error: 'Application not found',
-                code: 'NOT_FOUND'
-            });
+        if (error || !app) {
+            return res.status(404).json({ success: false, error: 'Application not found', code: 'NOT_FOUND' });
         }
-
-        const parsedApp = {
-            id: app.id,
-            refNumber: app.ref_number,
-            fullName: app.full_name,
-            email: app.email,
-            phone: app.phone,
-            department: app.department,
-            level: app.level,
-            talents: JSON.parse(app.talents || '[]'),
-            instruments: app.instruments,
-            otherTalent: app.other_talent,
-            previousExperience: app.previous_experience,
-            experienceDetails: app.experience_details,
-            motivation: app.motivation,
-            hopesToGain: app.hopes_to_gain,
-            availability: JSON.parse(app.availability || '[]'),
-            auditionSlot: app.audition_slot,
-            status: app.status,
-            adminNotes: app.admin_notes,
-            rating: app.rating,
-            tags: JSON.parse(app.tags || '[]'),
-            submittedAt: app.submitted_at,
-            updatedAt: app.updated_at,
-            statusHistory: JSON.parse(app.status_history || '[]')
-        };
 
         res.json({
             success: true,
-            application: parsedApp
+            application: {
+                id: app.id,
+                refNumber: app.ref_number,
+                fullName: app.full_name,
+                email: app.email,
+                phone: app.phone,
+                department: app.department,
+                level: app.level,
+                talents: app.talents || [],
+                instruments: app.instruments,
+                otherTalent: app.other_talent,
+                previousExperience: app.previous_experience,
+                experienceDetails: app.experience_details,
+                motivation: app.motivation,
+                hopesToGain: app.hopes_to_gain,
+                availability: app.availability || [],
+                auditionSlot: app.audition_slot,
+                status: app.status,
+                adminNotes: app.admin_notes,
+                rating: app.rating,
+                tags: app.tags || [],
+                submittedAt: app.submitted_at,
+                updatedAt: app.updated_at,
+                statusHistory: app.status_history || []
+            }
         });
 
     } catch (error) {
         console.error('Get application error:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to fetch application',
-            code: 'SERVER_ERROR'
-        });
+        res.status(500).json({ success: false, error: 'Failed to fetch application', code: 'SERVER_ERROR' });
     }
 });
 
 /**
  * PUT /api/admin/applications/:id
- * Update application
  */
 router.put('/applications/:id', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params;
         const updates = req.body;
 
-        const app = getOne('SELECT * FROM applications WHERE id = ?', [id]);
+        const { data: app, error: fetchError } = await supabase
+            .from('applications')
+            .select('*')
+            .eq('id', id)
+            .single();
 
-        if (!app) {
-            return res.status(404).json({
-                success: false,
-                error: 'Application not found',
-                code: 'NOT_FOUND'
-            });
+        if (fetchError || !app) {
+            return res.status(404).json({ success: false, error: 'Application not found', code: 'NOT_FOUND' });
         }
 
         const now = new Date().toISOString();
-        let statusHistory = JSON.parse(app.status_history || '[]');
+        let statusHistory = app.status_history || [];
 
         // If status changed, add to history and send email
         if (updates.status && updates.status !== app.status) {
@@ -458,7 +289,6 @@ router.put('/applications/:id', authenticateToken, async (req, res) => {
                 updatedBy: req.admin.username
             });
 
-            // Send status update email
             let templateType = null;
             if (updates.status === 'Audition Scheduled') templateType = 'audition_scheduled';
             else if (updates.status === 'Accepted') templateType = 'accepted';
@@ -474,47 +304,25 @@ router.put('/applications/:id', authenticateToken, async (req, res) => {
             }
         }
 
-        // Build update query
-        const updateFields = [];
-        const updateParams = [];
+        const updateData = {
+            updated_at: now,
+            status_history: statusHistory
+        };
 
-        if (updates.status !== undefined) {
-            updateFields.push('status = ?');
-            updateParams.push(updates.status);
-        }
-        if (updates.adminNotes !== undefined) {
-            updateFields.push('admin_notes = ?');
-            updateParams.push(updates.adminNotes);
-        }
-        if (updates.rating !== undefined) {
-            updateFields.push('rating = ?');
-            updateParams.push(updates.rating);
-        }
-        if (updates.tags !== undefined) {
-            updateFields.push('tags = ?');
-            updateParams.push(JSON.stringify(updates.tags));
-        }
-        if (updates.auditionSlot !== undefined) {
-            updateFields.push('audition_slot = ?');
-            updateParams.push(updates.auditionSlot);
-        }
+        if (updates.status !== undefined) updateData.status = updates.status;
+        if (updates.adminNotes !== undefined) updateData.admin_notes = updates.adminNotes;
+        if (updates.rating !== undefined) updateData.rating = updates.rating;
+        if (updates.tags !== undefined) updateData.tags = updates.tags;
+        if (updates.auditionSlot !== undefined) updateData.audition_slot = updates.auditionSlot;
 
-        updateFields.push('updated_at = ?');
-        updateParams.push(now);
+        const { data: updatedApp, error: updateError } = await supabase
+            .from('applications')
+            .update(updateData)
+            .eq('id', id)
+            .select()
+            .single();
 
-        updateFields.push('status_history = ?');
-        updateParams.push(JSON.stringify(statusHistory));
-
-        updateParams.push(id);
-
-        runQuery(`
-      UPDATE applications 
-      SET ${updateFields.join(', ')}
-      WHERE id = ?
-    `, updateParams);
-
-        // Fetch updated application
-        const updatedApp = getOne('SELECT * FROM applications WHERE id = ?', [id]);
+        if (updateError) throw updateError;
 
         res.json({
             success: true,
@@ -530,191 +338,125 @@ router.put('/applications/:id', authenticateToken, async (req, res) => {
 
     } catch (error) {
         console.error('Update application error:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to update application',
-            code: 'SERVER_ERROR'
-        });
+        res.status(500).json({ success: false, error: 'Failed to update application', code: 'SERVER_ERROR' });
     }
 });
 
 /**
  * DELETE /api/admin/applications/:id
- * Delete application
  */
-router.delete('/applications/:id', authenticateToken, (req, res) => {
+router.delete('/applications/:id', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params;
 
-        const app = getOne('SELECT id FROM applications WHERE id = ?', [id]);
+        const { data: app } = await supabase
+            .from('applications')
+            .select('id')
+            .eq('id', id)
+            .single();
 
         if (!app) {
-            return res.status(404).json({
-                success: false,
-                error: 'Application not found',
-                code: 'NOT_FOUND'
-            });
+            return res.status(404).json({ success: false, error: 'Application not found', code: 'NOT_FOUND' });
         }
 
-        runQuery('DELETE FROM applications WHERE id = ?', [id]);
+        await supabase.from('applications').delete().eq('id', id);
 
-        res.json({
-            success: true,
-            message: 'Application deleted successfully'
-        });
+        res.json({ success: true, message: 'Application deleted successfully' });
 
     } catch (error) {
         console.error('Delete application error:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to delete application',
-            code: 'SERVER_ERROR'
-        });
+        res.status(500).json({ success: false, error: 'Failed to delete application', code: 'SERVER_ERROR' });
     }
 });
 
 /**
  * POST /api/admin/applications/bulk-update
- * Bulk update applications
  */
-router.post('/applications/bulk-update', authenticateToken, (req, res) => {
+router.post('/applications/bulk-update', authenticateToken, async (req, res) => {
     try {
         const { applicationIds, updates } = req.body;
 
         if (!Array.isArray(applicationIds) || applicationIds.length === 0) {
-            return res.status(400).json({
-                success: false,
-                error: 'applicationIds must be a non-empty array',
-                code: 'INVALID_INPUT'
-            });
+            return res.status(400).json({ success: false, error: 'applicationIds must be a non-empty array', code: 'INVALID_INPUT' });
         }
 
         const now = new Date().toISOString();
-        let updatedCount = 0;
 
         for (const id of applicationIds) {
             if (updates.status) {
-                const app = getOne('SELECT status_history FROM applications WHERE id = ?', [id]);
+                const { data: app } = await supabase.from('applications').select('status_history').eq('id', id).single();
                 if (app) {
-                    let history = JSON.parse(app.status_history || '[]');
+                    let history = app.status_history || [];
                     history.push({ status: updates.status, timestamp: now, updatedBy: req.admin.username });
-
-                    runQuery(`
-            UPDATE applications 
-            SET status = ?, updated_at = ?, status_history = ?
-            WHERE id = ?
-          `, [updates.status, now, JSON.stringify(history), id]);
-                    updatedCount++;
+                    await supabase.from('applications').update({
+                        status: updates.status,
+                        updated_at: now,
+                        status_history: history
+                    }).eq('id', id);
                 }
             }
         }
 
-        res.json({
-            success: true,
-            updatedCount
-        });
+        res.json({ success: true, updatedCount: applicationIds.length });
 
     } catch (error) {
         console.error('Bulk update error:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to bulk update applications',
-            code: 'SERVER_ERROR'
-        });
+        res.status(500).json({ success: false, error: 'Failed to bulk update', code: 'SERVER_ERROR' });
     }
 });
 
 /**
  * DELETE /api/admin/applications/bulk-delete
- * Bulk delete applications
  */
-router.delete('/applications/bulk-delete', authenticateToken, (req, res) => {
+router.delete('/applications/bulk-delete', authenticateToken, async (req, res) => {
     try {
         const { applicationIds } = req.body;
 
         if (!Array.isArray(applicationIds) || applicationIds.length === 0) {
-            return res.status(400).json({
-                success: false,
-                error: 'applicationIds must be a non-empty array',
-                code: 'INVALID_INPUT'
-            });
+            return res.status(400).json({ success: false, error: 'applicationIds must be a non-empty array', code: 'INVALID_INPUT' });
         }
 
-        let deletedCount = 0;
         for (const id of applicationIds) {
-            runQuery('DELETE FROM applications WHERE id = ?', [id]);
-            deletedCount++;
+            await supabase.from('applications').delete().eq('id', id);
         }
 
-        res.json({
-            success: true,
-            deletedCount
-        });
+        res.json({ success: true, deletedCount: applicationIds.length });
 
     } catch (error) {
         console.error('Bulk delete error:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to bulk delete applications',
-            code: 'SERVER_ERROR'
-        });
+        res.status(500).json({ success: false, error: 'Failed to bulk delete', code: 'SERVER_ERROR' });
     }
 });
 
 /**
  * GET /api/admin/applications/export
- * Export applications to CSV
  */
-router.get('/applications/export', authenticateToken, (req, res) => {
+router.get('/applications/export', authenticateToken, async (req, res) => {
     try {
-        const { status, department, level, dateFrom, dateTo } = req.query;
+        const { status, department, level } = req.query;
 
-        let whereClauses = [];
-        let params = [];
+        let query = supabase.from('applications').select('*');
 
-        if (status && status !== 'All') {
-            whereClauses.push('status = ?');
-            params.push(status);
-        }
-        if (department && department !== 'All') {
-            whereClauses.push('department = ?');
-            params.push(department);
-        }
-        if (level && level !== 'All') {
-            whereClauses.push('level = ?');
-            params.push(level);
-        }
-        if (dateFrom) {
-            whereClauses.push('DATE(submitted_at) >= ?');
-            params.push(dateFrom);
-        }
-        if (dateTo) {
-            whereClauses.push('DATE(submitted_at) <= ?');
-            params.push(dateTo);
-        }
+        if (status && status !== 'All') query = query.eq('status', status);
+        if (department && department !== 'All') query = query.eq('department', department);
+        if (level && level !== 'All') query = query.eq('level', level);
 
-        const whereClause = whereClauses.length > 0
-            ? 'WHERE ' + whereClauses.join(' AND ')
-            : '';
+        query = query.order('submitted_at', { ascending: false });
 
-        const applications = getAll(`
-      SELECT * FROM applications ${whereClause} ORDER BY submitted_at DESC
-    `, params);
+        const { data: applications, error } = await query;
 
-        // Generate CSV
-        const headers = [
-            'RefNumber', 'Name', 'Email', 'Phone', 'Department', 'Level',
-            'Talents', 'Status', 'Rating', 'Submitted', 'Notes'
-        ];
+        if (error) throw error;
 
-        const rows = applications.map(app => [
+        const headers = ['RefNumber', 'Name', 'Email', 'Phone', 'Department', 'Level', 'Talents', 'Status', 'Rating', 'Submitted', 'Notes'];
+
+        const rows = (applications || []).map(app => [
             app.ref_number,
-            `"${app.full_name.replace(/"/g, '""')}"`,
+            `"${(app.full_name || '').replace(/"/g, '""')}"`,
             app.email,
             app.phone,
             app.department,
             app.level,
-            `"${JSON.parse(app.talents || '[]').join(', ')}"`,
+            `"${(app.talents || []).join(', ')}"`,
             app.status,
             app.rating || 0,
             app.submitted_at,
@@ -730,39 +472,26 @@ router.get('/applications/export', authenticateToken, (req, res) => {
 
     } catch (error) {
         console.error('Export error:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to export applications',
-            code: 'SERVER_ERROR'
-        });
+        res.status(500).json({ success: false, error: 'Failed to export applications', code: 'SERVER_ERROR' });
     }
 });
 
 /**
  * POST /api/admin/applications/:id/send-email
- * Send email to applicant
  */
 router.post('/applications/:id/send-email', authenticateToken, async (req, res) => {
     try {
         const { id } = req.params;
         const { subject, message } = req.body;
 
-        const app = getOne('SELECT * FROM applications WHERE id = ?', [id]);
+        const { data: app } = await supabase.from('applications').select('*').eq('id', id).single();
 
         if (!app) {
-            return res.status(404).json({
-                success: false,
-                error: 'Application not found',
-                code: 'NOT_FOUND'
-            });
+            return res.status(404).json({ success: false, error: 'Application not found', code: 'NOT_FOUND' });
         }
 
         if (!subject || !message) {
-            return res.status(400).json({
-                success: false,
-                error: 'Subject and message are required',
-                code: 'INVALID_INPUT'
-            });
+            return res.status(400).json({ success: false, error: 'Subject and message are required', code: 'INVALID_INPUT' });
         }
 
         await sendEmail(app.id, app.email, 'custom', {
@@ -772,18 +501,11 @@ router.post('/applications/:id/send-email', authenticateToken, async (req, res) 
             refNumber: app.ref_number
         });
 
-        res.json({
-            success: true,
-            message: 'Email sent successfully'
-        });
+        res.json({ success: true, message: 'Email sent successfully' });
 
     } catch (error) {
         console.error('Send email error:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to send email',
-            code: 'SERVER_ERROR'
-        });
+        res.status(500).json({ success: false, error: 'Failed to send email', code: 'SERVER_ERROR' });
     }
 });
 

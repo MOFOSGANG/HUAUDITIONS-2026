@@ -1,19 +1,26 @@
-import { getOne, getAll } from '../config/database.js';
+import { supabase } from '../config/database.js';
 
 /**
  * Generate a unique reference number in format HUDT-YYYY-XXX
- * @returns {string} Reference number
+ * @returns {Promise<string>} Reference number
  */
-export const generateRefNumber = () => {
+export const generateRefNumber = async () => {
   const year = new Date().getFullYear();
 
+  if (!supabase) {
+    // Fallback if Supabase is not initialized
+    const random = Math.floor(Math.random() * 900) + 100;
+    return `HUDT-${year}-${random}`;
+  }
+
   // Get the highest number for this year
-  const result = getOne(`
-    SELECT ref_number FROM applications 
-    WHERE ref_number LIKE ? 
-    ORDER BY ref_number DESC 
-    LIMIT 1
-  `, [`HUDT-${year}-%`]);
+  const { data: result } = await supabase
+    .from('applications')
+    .select('ref_number')
+    .like('ref_number', `HUDT-${year}-%`)
+    .order('ref_number', { ascending: false })
+    .limit(1)
+    .single();
 
   let nextNumber = 1;
 

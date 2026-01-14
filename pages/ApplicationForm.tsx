@@ -35,7 +35,7 @@ const ApplicationForm: React.FC<ApplicationFormProps> = ({ onSubmit, onCancel })
     if (!formData.level) newErrors.level = 'Level is required';
     if (!formData.talents?.length) newErrors.talents = 'Select at least one talent';
     if (!formData.motivation || formData.motivation.length < 50) newErrors.motivation = 'Min 50 characters required';
-    
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -69,9 +69,9 @@ const ApplicationForm: React.FC<ApplicationFormProps> = ({ onSubmit, onCancel })
   };
 
   const talentOptions = [
-    "Singing", "Dancing", "Acting", "Playing Instruments", 
-    "Costume Management", "Stage Management", "Script Writing", 
-    "Makeup & Special Effects", "Sound/Technical Production", 
+    "Singing", "Dancing", "Acting", "Playing Instruments",
+    "Costume Management", "Stage Management", "Script Writing",
+    "Makeup & Special Effects", "Sound/Technical Production",
     "Lighting Design", "Set Design", "Photography/Videography", "Other"
   ];
 
@@ -90,11 +90,11 @@ const ApplicationForm: React.FC<ApplicationFormProps> = ({ onSubmit, onCancel })
             <h3 className="text-2xl font-black text-purple-900 border-b-2 border-purple-200 pb-2 flex items-center gap-2">
               <span>👤</span> Personal Information
             </h3>
-            
+
             <div className="grid md:grid-cols-2 gap-6">
               <div className="col-span-2">
                 <label className="block text-sm font-bold text-gray-700 mb-2">Full Name *</label>
-                <input 
+                <input
                   type="text" name="fullName" value={formData.fullName} onChange={handleChange}
                   placeholder="Enter your full name"
                   className={`w-full p-4 rounded-xl border-2 transition-all outline-none focus:ring-2 focus:ring-purple-500 ${errors.fullName ? 'border-red-400' : 'border-purple-200'}`}
@@ -104,7 +104,7 @@ const ApplicationForm: React.FC<ApplicationFormProps> = ({ onSubmit, onCancel })
 
               <div>
                 <label className="block text-sm font-bold text-gray-700 mb-2">Email Address *</label>
-                <input 
+                <input
                   type="email" name="email" value={formData.email} onChange={handleChange}
                   placeholder="your.email@student.hallmark.edu"
                   className={`w-full p-4 rounded-xl border-2 transition-all outline-none focus:ring-2 focus:ring-purple-500 ${errors.email ? 'border-red-400' : 'border-purple-200'}`}
@@ -114,7 +114,7 @@ const ApplicationForm: React.FC<ApplicationFormProps> = ({ onSubmit, onCancel })
 
               <div>
                 <label className="block text-sm font-bold text-gray-700 mb-2">Phone Number *</label>
-                <input 
+                <input
                   type="tel" name="phone" value={formData.phone} onChange={handleChange}
                   placeholder="+234 XXX XXX XXXX"
                   className={`w-full p-4 rounded-xl border-2 transition-all outline-none focus:ring-2 focus:ring-purple-500 ${errors.phone ? 'border-red-400' : 'border-purple-200'}`}
@@ -124,25 +124,28 @@ const ApplicationForm: React.FC<ApplicationFormProps> = ({ onSubmit, onCancel })
 
               <div>
                 <label className="block text-sm font-bold text-gray-700 mb-2">Department *</label>
-                <select 
+                <select
                   name="department" value={formData.department} onChange={handleChange}
                   className={`w-full p-4 rounded-xl border-2 transition-all outline-none focus:ring-2 focus:ring-purple-500 ${errors.department ? 'border-red-400' : 'border-purple-200'}`}
                 >
                   <option value="">Select Department</option>
-                  <option>Arts</option>
-                  <option>Computer Science</option>
-                  <option>Engineering</option>
-                  <option>Medicine</option>
-                  <option>Law</option>
-                  <option>Business Administration</option>
+                  <option>International Relations</option>
                   <option>Mass Communication</option>
+                  <option>Business Administration</option>
+                  <option>Biochemistry</option>
+                  <option>Microbiology</option>
+                  <option>Accounting</option>
+                  <option>Sociology</option>
+                  <option>Computer Science</option>
+                  <option>Economics</option>
+                  <option>Zoology</option>
                 </select>
                 {errors.department && <p className="text-red-500 text-xs mt-1 font-bold">{errors.department}</p>}
               </div>
 
               <div>
                 <label className="block text-sm font-bold text-gray-700 mb-2">Level/Year *</label>
-                <select 
+                <select
                   name="level" value={formData.level} onChange={handleChange}
                   className={`w-full p-4 rounded-xl border-2 transition-all outline-none focus:ring-2 focus:ring-purple-500 ${errors.level ? 'border-red-400' : 'border-purple-200'}`}
                 >
@@ -163,14 +166,14 @@ const ApplicationForm: React.FC<ApplicationFormProps> = ({ onSubmit, onCancel })
             <h3 className="text-2xl font-black text-amber-900 border-b-2 border-amber-200 pb-2 flex items-center gap-2">
               <span>🎭</span> Talent Information
             </h3>
-            
+
             <div>
               <label className="block text-sm font-bold text-amber-900 mb-4">Primary Talents/Contributions *</label>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                 {talentOptions.map(talent => (
                   <label key={talent} className="flex items-center gap-3 bg-white p-3 rounded-xl border border-amber-200 cursor-pointer hover:bg-amber-100 transition-colors">
-                    <input 
-                      type="checkbox" 
+                    <input
+                      type="checkbox"
                       className="w-5 h-5 rounded accent-amber-600"
                       checked={formData.talents?.includes(talent)}
                       onChange={(e) => handleCheckboxChange('talents', talent, e.target.checked)}
@@ -185,7 +188,7 @@ const ApplicationForm: React.FC<ApplicationFormProps> = ({ onSubmit, onCancel })
             {formData.talents?.includes('Playing Instruments') && (
               <div className="animate-fade-in">
                 <label className="block text-sm font-bold text-amber-900 mb-2">Specify Instruments</label>
-                <input 
+                <input
                   type="text" name="instruments" value={formData.instruments} onChange={handleChange}
                   placeholder="e.g. Piano, Guitar, Drums"
                   className="w-full p-4 rounded-xl border-2 border-amber-200"
@@ -205,8 +208,8 @@ const ApplicationForm: React.FC<ApplicationFormProps> = ({ onSubmit, onCancel })
               <div className="flex gap-6">
                 {['Yes', 'No'].map(opt => (
                   <label key={opt} className="flex items-center gap-2 cursor-pointer">
-                    <input 
-                      type="radio" name="experience" value={opt} checked={formData.experience === opt} 
+                    <input
+                      type="radio" name="experience" value={opt} checked={formData.experience === opt}
                       onChange={handleChange}
                       className="w-5 h-5 accent-purple-600"
                     />
@@ -219,7 +222,7 @@ const ApplicationForm: React.FC<ApplicationFormProps> = ({ onSubmit, onCancel })
             {formData.experience === 'Yes' && (
               <div className="animate-fade-in">
                 <label className="block text-sm font-bold text-gray-700 mb-2">Experience Details</label>
-                <textarea 
+                <textarea
                   name="experienceDetails" value={formData.experienceDetails} onChange={handleChange}
                   rows={3} placeholder="Tell us about your previous performances..."
                   className="w-full p-4 rounded-xl border-2 border-purple-200"
@@ -229,7 +232,7 @@ const ApplicationForm: React.FC<ApplicationFormProps> = ({ onSubmit, onCancel })
 
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-2">Why do you want to join HUDT? *</label>
-              <textarea 
+              <textarea
                 name="motivation" value={formData.motivation} onChange={handleChange}
                 rows={4} placeholder="Share your passion and motivation... (min 50 chars)"
                 className={`w-full p-4 rounded-xl border-2 ${errors.motivation ? 'border-red-400' : 'border-purple-200'}`}
@@ -244,10 +247,9 @@ const ApplicationForm: React.FC<ApplicationFormProps> = ({ onSubmit, onCancel })
               <label className="block text-sm font-bold text-gray-700 mb-4">Availability for Rehearsals *</label>
               <div className="flex flex-wrap gap-3">
                 {['Weekdays', 'Weekends'].map(day => (
-                  <label key={day} className={`px-6 py-2 rounded-full border-2 cursor-pointer transition-all font-bold ${
-                    formData.availability?.includes(day) ? 'bg-purple-900 text-white border-purple-900' : 'bg-white text-purple-900 border-purple-200'
-                  }`}>
-                    <input 
+                  <label key={day} className={`px-6 py-2 rounded-full border-2 cursor-pointer transition-all font-bold ${formData.availability?.includes(day) ? 'bg-purple-900 text-white border-purple-900' : 'bg-white text-purple-900 border-purple-200'
+                    }`}>
+                    <input
                       type="checkbox" className="hidden"
                       checked={formData.availability?.includes(day)}
                       onChange={(e) => handleCheckboxChange('availability', day, e.target.checked)}
@@ -260,7 +262,7 @@ const ApplicationForm: React.FC<ApplicationFormProps> = ({ onSubmit, onCancel })
 
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-2">Preferred Audition Slot</label>
-              <select 
+              <select
                 name="preferredSlot" value={formData.preferredSlot} onChange={handleChange}
                 className="w-full p-4 rounded-xl border-2 border-purple-200 font-semibold"
               >
@@ -274,14 +276,14 @@ const ApplicationForm: React.FC<ApplicationFormProps> = ({ onSubmit, onCancel })
           </div>
 
           <div className="flex flex-col md:flex-row gap-4">
-            <button 
+            <button
               type="button" onClick={onCancel}
               className="flex-1 px-8 py-5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-black rounded-2xl transition-all"
             >
               Cancel
             </button>
-            <button 
-              type="submit" 
+            <button
+              type="submit"
               disabled={isSubmitting}
               className={`flex-[2] px-8 py-5 bg-gradient-to-r from-purple-600 to-amber-600 hover:from-purple-700 hover:to-amber-700 text-white font-black rounded-2xl transition-all shadow-xl transform hover:scale-105 flex items-center justify-center gap-3 ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}
             >

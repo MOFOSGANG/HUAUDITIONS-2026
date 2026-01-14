@@ -1,186 +1,126 @@
-import initSqlJs from 'sql.js';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { createClient } from '@supabase/supabase-js';
 import bcrypt from 'bcryptjs';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+// Supabase configuration
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_ANON_KEY;
 
-// Database file path
-const dataDir = join(__dirname, '..', 'data');
-const dbPath = join(dataDir, 'hudt.db');
-
-// Ensure data directory exists
-try {
-  mkdirSync(dataDir, { recursive: true });
-} catch (e) {
-  // Directory already exists
+if (!supabaseUrl || !supabaseKey) {
+  console.error('❌ Missing SUPABASE_URL or SUPABASE_ANON_KEY environment variables');
 }
 
-let db = null;
+const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
 
-// Initialize the database
+// Initialize the database (create default admin if needed)
 export async function initDatabase() {
-  const SQL = await initSqlJs();
-
-  // Load existing database or create new one
-  if (existsSync(dbPath)) {
-    const buffer = readFileSync(dbPath);
-    db = new SQL.Database(buffer);
-  } else {
-    db = new SQL.Database();
+  if (!supabase) {
+    console.error('❌ Supabase client not initialized. Check environment variables.');
+    return null;
   }
 
-  // Create tables
-  db.run(`
-    CREATE TABLE IF NOT EXISTS applications (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      ref_number TEXT UNIQUE NOT NULL,
-      full_name TEXT NOT NULL,
-      email TEXT UNIQUE NOT NULL,
-      phone TEXT UNIQUE NOT NULL,
-      department TEXT NOT NULL,
-      level TEXT NOT NULL,
-      talents TEXT NOT NULL,
-      instruments TEXT,
-      other_talent TEXT,
-      previous_experience TEXT NOT NULL,
-      experience_details TEXT,
-      motivation TEXT NOT NULL,
-      hopes_to_gain TEXT,
-      availability TEXT NOT NULL,
-      audition_slot TEXT,
-      status TEXT DEFAULT 'Submitted',
-      admin_notes TEXT,
-      rating INTEGER DEFAULT 0,
-      tags TEXT,
-      submitted_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      status_history TEXT
-    )
-  `);
+  console.log('✅ Supabase client initialized');
 
-  db.run(`
-    CREATE TABLE IF NOT EXISTS admins (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      username TEXT UNIQUE NOT NULL,
-      password_hash TEXT NOT NULL,
-      email TEXT UNIQUE NOT NULL,
-      role TEXT DEFAULT 'admin',
-      created_at TEXT NOT NULL,
-      last_login TEXT
-    )
-  `);
+  // Check if default admin exists
+  const { data: existingAdmin } = await supabase
+    .from('admins')
+    .select('id')
+    .eq('username', 'admin')
+    .single();
 
-  db.run(`
-    CREATE TABLE IF NOT EXISTS email_logs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      application_id INTEGER,
-      recipient TEXT NOT NULL,
-      subject TEXT NOT NULL,
-      body TEXT NOT NULL,
-      sent_at TEXT NOT NULL,
-      status TEXT DEFAULT 'sent'
-    )
-  `);
-
-  // Create indexes
-  db.run(`CREATE INDEX IF NOT EXISTS idx_applications_status ON applications(status)`);
-  db.run(`CREATE INDEX IF NOT EXISTS idx_applications_ref_number ON applications(ref_number)`);
-  db.run(`CREATE INDEX IF NOT EXISTS idx_applications_email ON applications(email)`);
-  db.run(`CREATE INDEX IF NOT EXISTS idx_applications_phone ON applications(phone)`);
-
-  // Check if default admin exists - use env vars for production
-  const adminResult = db.exec(`SELECT id FROM admins WHERE username = 'admin'`);
-  if (adminResult.length === 0 || adminResult[0].values.length === 0) {
-    // Use environment variables or defaults
+  if (!existingAdmin) {
     const adminUsername = process.env.ADMIN_USERNAME || 'admin';
     const adminPassword = process.env.ADMIN_PASSWORD || 'hudt2026admin';
     const adminEmail = process.env.ADMIN_EMAIL || 'admin@hudtplatform.com';
-
     const passwordHash = bcrypt.hashSync(adminPassword, 10);
     const now = new Date().toISOString();
-    db.run(`
-      INSERT INTO admins (username, password_hash, email, role, created_at)
-      VALUES (?, ?, ?, ?, ?)
-    `, [adminUsername, passwordHash, adminEmail, 'super_admin', now]);
-    console.log(`✅ Default admin created: ${adminUsername}`);
-    console.log('   (Set ADMIN_PASSWORD env var to change password)');
+
+    const { error } = await supabase.from('admins').insert({
+      username: adminUsername,
+      password_hash: passwordHash,
+      email: adminEmail,
+      role: 'super_admin',
+      created_at: now
+    });
+
+    if (error) {
+      console.error('❌ Failed to create default admin:', error.message);
+    } else {
+      console.log(`✅ Default admin created: ${adminUsername}`);
+    }
   }
 
-  // Save database
-  saveDatabase();
-
-  return db;
+  return supabase;
 }
 
-// Save database to file
-export function saveDatabase() {
-  if (db) {
-    const data = db.export();
-    const buffer = Buffer.from(data);
-    writeFileSync(dbPath, buffer);
-  }
-}
-
-// Get the database instance
+// Get the Supabase client instance
 export function getDb() {
-  return db;
+  return supabase;
 }
 
-// Database query helpers
-export function runQuery(sql, params = []) {
-  try {
-    db.run(sql, params);
-    saveDatabase();
-    return { changes: db.getRowsModified(), lastInsertRowid: getLastInsertRowId() };
-  } catch (error) {
-    console.error('Query error:', error);
-    throw error;
+// Database query helpers (Supabase-compatible)
+export async function runQuery(table, operation, data, match = null) {
+  if (!supabase) throw new Error('Supabase not initialized');
+
+  let query;
+  switch (operation) {
+    case 'insert':
+      query = supabase.from(table).insert(data).select();
+      break;
+    case 'update':
+      query = supabase.from(table).update(data).match(match).select();
+      break;
+    case 'delete':
+      query = supabase.from(table).delete().match(match);
+      break;
+    default:
+      throw new Error(`Unknown operation: ${operation}`);
   }
+
+  const { data: result, error } = await query;
+  if (error) throw error;
+  return result;
 }
 
-export function getOne(sql, params = []) {
-  try {
-    const stmt = db.prepare(sql);
-    if (params.length > 0) {
-      stmt.bind(params);
-    }
-    if (stmt.step()) {
-      const row = stmt.getAsObject();
-      stmt.free();
-      return row;
-    }
-    stmt.free();
-    return null;
-  } catch (error) {
-    console.error('Query error:', error);
-    throw error;
+export async function getOne(table, match) {
+  if (!supabase) throw new Error('Supabase not initialized');
+
+  const { data, error } = await supabase
+    .from(table)
+    .select('*')
+    .match(match)
+    .single();
+
+  if (error && error.code !== 'PGRST116') throw error; // PGRST116 = no rows
+  return data;
+}
+
+export async function getAll(table, options = {}) {
+  if (!supabase) throw new Error('Supabase not initialized');
+
+  let query = supabase.from(table).select('*');
+
+  if (options.match) {
+    query = query.match(options.match);
   }
-}
-
-export function getAll(sql, params = []) {
-  try {
-    const stmt = db.prepare(sql);
-    if (params.length > 0) {
-      stmt.bind(params);
-    }
-    const results = [];
-    while (stmt.step()) {
-      results.push(stmt.getAsObject());
-    }
-    stmt.free();
-    return results;
-  } catch (error) {
-    console.error('Query error:', error);
-    throw error;
+  if (options.order) {
+    query = query.order(options.order.column, { ascending: options.order.ascending ?? false });
   }
+  if (options.limit) {
+    query = query.limit(options.limit);
+  }
+  if (options.offset) {
+    query = query.range(options.offset, options.offset + (options.limit || 20) - 1);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return data || [];
 }
 
-function getLastInsertRowId() {
-  const result = db.exec('SELECT last_insert_rowid() as id');
-  return result[0]?.values[0]?.[0] || 0;
+// Legacy compatibility functions
+export function saveDatabase() {
+  // No-op for Supabase (auto-saves)
 }
 
-export default { initDatabase, getDb, runQuery, getOne, getAll, saveDatabase };
+export { supabase };
+export default { initDatabase, getDb, runQuery, getOne, getAll, saveDatabase, supabase };

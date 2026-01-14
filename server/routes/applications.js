@@ -1,5 +1,5 @@
 import express from 'express';
-import { getOne, runQuery } from '../config/database.js';
+import { supabase } from '../config/database.js';
 import { validateApplication, sanitizeApplication } from '../utils/validators.js';
 import { generateRefNumber } from '../utils/refNumberGenerator.js';
 import { sendEmail } from '../utils/emailService.js';
@@ -13,6 +13,14 @@ const router = express.Router();
  */
 router.post('/', applicationLimiter, async (req, res) => {
     try {
+        if (!supabase) {
+            return res.status(500).json({
+                success: false,
+                error: 'Database not initialized',
+                code: 'DB_ERROR'
+            });
+        }
+
         // Sanitize input
         const sanitizedData = sanitizeApplication(req.body);
 
@@ -28,7 +36,12 @@ router.post('/', applicationLimiter, async (req, res) => {
         }
 
         // Check for duplicate email
-        const existingEmail = getOne('SELECT id FROM applications WHERE email = ?', [sanitizedData.email]);
+        const { data: existingEmail } = await supabase
+            .from('applications')
+            .select('id')
+            .eq('email', sanitizedData.email)
+            .single();
+
         if (existingEmail) {
             return res.status(409).json({
                 success: false,
@@ -38,7 +51,12 @@ router.post('/', applicationLimiter, async (req, res) => {
         }
 
         // Check for duplicate phone
-        const existingPhone = getOne('SELECT id FROM applications WHERE phone = ?', [sanitizedData.phone]);
+        const { data: existingPhone } = await supabase
+            .from('applications')
+            .select('id')
+            .eq('phone', sanitizedData.phone)
+            .single();
+
         if (existingPhone) {
             return res.status(409).json({
                 success: false,
@@ -48,47 +66,49 @@ router.post('/', applicationLimiter, async (req, res) => {
         }
 
         // Generate reference number
-        const refNumber = generateRefNumber();
+        const refNumber = await generateRefNumber();
         const now = new Date().toISOString();
 
         // Insert application
-        const result = runQuery(`
-      INSERT INTO applications (
-        ref_number, full_name, email, phone, department, level,
-        talents, instruments, other_talent, previous_experience,
-        experience_details, motivation, hopes_to_gain, availability,
-        audition_slot, status, submitted_at, updated_at, status_history
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-            refNumber,
-            sanitizedData.fullName,
-            sanitizedData.email,
-            sanitizedData.phone,
-            sanitizedData.department,
-            sanitizedData.level,
-            JSON.stringify(sanitizedData.talents),
-            sanitizedData.instruments,
-            sanitizedData.otherTalent,
-            sanitizedData.previousExperience,
-            sanitizedData.experienceDetails,
-            sanitizedData.motivation,
-            sanitizedData.hopesToGain,
-            JSON.stringify(sanitizedData.availability),
-            sanitizedData.auditionSlot,
-            'Submitted',
-            now,
-            now,
-            JSON.stringify([{ status: 'Submitted', timestamp: now, updatedBy: 'system' }])
-        ]);
+        const { data: newApp, error: insertError } = await supabase
+            .from('applications')
+            .insert({
+                ref_number: refNumber,
+                full_name: sanitizedData.fullName,
+                email: sanitizedData.email,
+                phone: sanitizedData.phone,
+                department: sanitizedData.department,
+                level: sanitizedData.level,
+                talents: sanitizedData.talents,
+                instruments: sanitizedData.instruments,
+                other_talent: sanitizedData.otherTalent,
+                previous_experience: sanitizedData.previousExperience,
+                experience_details: sanitizedData.experienceDetails,
+                motivation: sanitizedData.motivation,
+                hopes_to_gain: sanitizedData.hopesToGain,
+                availability: sanitizedData.availability,
+                audition_slot: sanitizedData.auditionSlot,
+                status: 'Submitted',
+                submitted_at: now,
+                updated_at: now,
+                status_history: [{ status: 'Submitted', timestamp: now, updatedBy: 'system' }]
+            })
+            .select()
+            .single();
+
+        if (insertError) {
+            console.error('Insert error:', insertError);
+            throw insertError;
+        }
 
         // Send confirmation email to applicant
-        await sendEmail(result.lastInsertRowid, sanitizedData.email, 'application_received', {
+        await sendEmail(newApp.id, sanitizedData.email, 'application_received', {
             fullName: sanitizedData.fullName,
             refNumber
         });
 
         // Notify Admin
-        await sendEmail(result.lastInsertRowid, 'Mofosgang123@gmail.com', 'admin_new_application', {
+        await sendEmail(newApp.id, 'Mofosgang123@gmail.com', 'admin_new_application', {
             fullName: sanitizedData.fullName,
             department: sanitizedData.department,
             refNumber
@@ -114,18 +134,34 @@ router.post('/', applicationLimiter, async (req, res) => {
  * GET /api/applications/status/:identifier
  * Check application status by reference number or phone
  */
-router.get('/status/:identifier', statusCheckLimiter, (req, res) => {
+router.get('/status/:identifier', statusCheckLimiter, async (req, res) => {
     try {
+        if (!supabase) {
+            return res.status(500).json({
+                success: false,
+                error: 'Database not initialized',
+                code: 'DB_ERROR'
+            });
+        }
+
         const { identifier } = req.params;
 
-        // Search by ref_number or phone
-        const application = getOne(`
-      SELECT 
-        ref_number, full_name, department, level, talents,
-        status, audition_slot, submitted_at
-      FROM applications 
-      WHERE ref_number = ? OR phone = ?
-    `, [identifier, identifier]);
+        // Search by ref_number first
+        let { data: application } = await supabase
+            .from('applications')
+            .select('ref_number, full_name, department, level, talents, status, audition_slot, submitted_at')
+            .eq('ref_number', identifier)
+            .single();
+
+        // If not found, try phone
+        if (!application) {
+            const { data: phoneResult } = await supabase
+                .from('applications')
+                .select('ref_number, full_name, department, level, talents, status, audition_slot, submitted_at')
+                .eq('phone', identifier)
+                .single();
+            application = phoneResult;
+        }
 
         if (!application) {
             return res.status(404).json({
@@ -135,13 +171,13 @@ router.get('/status/:identifier', statusCheckLimiter, (req, res) => {
             });
         }
 
-        // Parse JSON fields
+        // Format response
         const parsedApplication = {
             refNumber: application.ref_number,
             fullName: application.full_name,
             department: application.department,
             level: application.level,
-            talents: JSON.parse(application.talents || '[]'),
+            talents: application.talents || [],
             status: application.status,
             auditionSlot: application.audition_slot,
             submittedAt: application.submitted_at

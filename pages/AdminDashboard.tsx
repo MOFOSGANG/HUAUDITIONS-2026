@@ -20,7 +20,7 @@ interface AdminDashboardProps {
 }
 
 const STATUSES = ['All', 'Submitted', 'Under Review', 'Audition Scheduled', 'Accepted', 'Waitlisted', 'Not Selected'];
-const DEPARTMENTS = ['All', 'Computer Science', 'Engineering', 'Medicine', 'Law', 'Business Administration', 'Mass Communication', 'Arts', 'Sciences', 'Education', 'Nursing', 'Architecture', 'Pharmacy'];
+const DEPARTMENTS = ['All', 'International Relations', 'Mass Communication', 'Business Administration', 'Biochemistry', 'Microbiology', 'Accounting', 'Sociology', 'Computer Science', 'Economics', 'Zoology'];
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, onNavigate }) => {
     const [activeTab, setActiveTab] = useState<'dashboard' | 'applications' | 'history'>('dashboard');

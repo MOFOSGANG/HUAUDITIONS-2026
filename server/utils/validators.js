@@ -1,18 +1,16 @@
 // Validation utilities for HUDT application data
 
 export const VALID_DEPARTMENTS = [
-    'Computer Science',
-    'Engineering',
-    'Medicine',
-    'Law',
-    'Business Administration',
+    'International Relations',
     'Mass Communication',
-    'Arts',
-    'Sciences',
-    'Education',
-    'Nursing',
-    'Architecture',
-    'Pharmacy'
+    'Business Administration',
+    'Biochemistry',
+    'Microbiology',
+    'Accounting',
+    'Sociology',
+    'Computer Science',
+    'Economics',
+    'Zoology'
 ];
 
 export const VALID_LEVELS = ['100', '200', '300', '400', '500'];
