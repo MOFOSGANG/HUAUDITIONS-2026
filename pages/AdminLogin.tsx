@@ -9,7 +9,6 @@ interface AdminLoginProps {
 }
 
 const AdminLogin: React.FC<AdminLoginProps> = ({ onLogin, onNavigate }) => {
-    const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -20,11 +19,12 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onLogin, onNavigate }) => {
         setIsLoading(true);
 
         try {
-            const response = await adminLogin(username, password);
+            // Use 'admin' as default username for password-only login
+            const response = await adminLogin('admin', password);
             if (response.success) {
                 onLogin();
             } else {
-                setError('Invalid credentials');
+                setError('Invalid password');
             }
         } catch (err: any) {
             setError(err.message || 'Login failed. Please try again.');
@@ -41,7 +41,7 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onLogin, onNavigate }) => {
                         <span className="text-4xl">🎭</span>
                     </div>
                     <h2 className="text-3xl font-black text-purple-900 mb-2">Admin Portal</h2>
-                    <p className="text-gray-500 font-medium">Sign in to manage applications</p>
+                    <p className="text-gray-500 font-medium">Enter password to access dashboard</p>
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-6">
@@ -52,26 +52,15 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onLogin, onNavigate }) => {
                     )}
 
                     <div>
-                        <label className="block text-sm font-bold text-gray-700 mb-2">Username</label>
-                        <input
-                            type="text"
-                            value={username}
-                            onChange={(e) => setUsername(e.target.value)}
-                            placeholder="Enter username"
-                            className="w-full p-4 rounded-xl border-2 border-purple-200 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 transition-all outline-none font-semibold"
-                            required
-                        />
-                    </div>
-
-                    <div>
                         <label className="block text-sm font-bold text-gray-700 mb-2">Password</label>
                         <input
                             type="password"
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
-                            placeholder="Enter password"
-                            className="w-full p-4 rounded-xl border-2 border-purple-200 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 transition-all outline-none font-semibold"
+                            placeholder="Enter admin password"
+                            className="w-full p-4 rounded-xl border-2 border-purple-200 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 transition-all outline-none font-semibold text-center text-lg tracking-widest"
                             required
+                            autoFocus
                         />
                     </div>
 
@@ -83,10 +72,10 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onLogin, onNavigate }) => {
                         {isLoading ? (
                             <>
                                 <div className="w-6 h-6 border-3 border-white border-t-transparent rounded-full animate-spin"></div>
-                                Signing in...
+                                Verifying...
                             </>
                         ) : (
-                            'Sign In'
+                            'Access Dashboard'
                         )}
                     </button>
                 </form>
