@@ -248,37 +248,20 @@ export const sendEmail = async (applicationId, recipient, templateType, data) =>
     }
 
     const now = new Date().toISOString();
-    const transporter = createTransporter();
+
+    // SMTP Sending Disabled as per user request to move to WhatsApp-first communication
+    console.log(`ℹ️ WhatsApp-First Mode: Email to ${recipient} (${templateType}) logged to DB only.`);
 
     try {
-        if (transporter) {
-            await transporter.sendMail({
-                from: `"HUDT Auditions" <${process.env.SMTP_USER}>`,
-                to: recipient,
-                subject: subject,
-                text: body,
-                ...(html ? { html } : {})
-            });
-            console.log(`✅ Success: Real email sent to ${recipient}`);
-        } else {
-            console.log(`⚠️ Simulation Mode: Email to ${recipient} logged to DB only.`);
-        }
-
         runQuery(`
             INSERT INTO email_logs (application_id, recipient, subject, body, sent_at, status)
             VALUES (?, ?, ?, ?, ?, ?)
-        `, [applicationId, recipient, subject, body, now, 'sent']);
+        `, [applicationId, recipient, subject, body, now, 'logged']);
 
-        return { success: true, message: 'Email processed successfully' };
+        return { success: true, message: 'Email logged (SMTP bypassed)' };
     } catch (error) {
-        console.error('❌ Email Error:', error);
-
-        runQuery(`
-            INSERT INTO email_logs (application_id, recipient, subject, body, sent_at, status)
-            VALUES (?, ?, ?, ?, ?, ?)
-        `, [applicationId, recipient, subject, body, now, 'failed']);
-
-        return { success: false, error: 'Failed to send actual email' };
+        console.error('❌ Email Log Error:', error);
+        return { success: false, error: 'Failed to log email' };
     }
 };
 

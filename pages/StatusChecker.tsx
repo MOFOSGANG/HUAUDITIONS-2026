@@ -166,12 +166,25 @@ const StatusChecker: React.FC<StatusCheckerProps> = ({ onNavigate }) => {
               </div>
             </div>
 
+            {/* WhatsApp CTA */}
+            <div className="bg-green-50 border-2 border-green-200 rounded-3xl p-6 text-center shadow-sm">
+              <p className="text-green-800 font-bold mb-4 uppercase tracking-widest text-xs">Stay Updated via WhatsApp</p>
+              <a
+                href="https://chat.whatsapp.com/JIyFdFsw3t5JT2C7vEBYoq"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-3 px-8 py-3 bg-[#25D366] text-white font-black rounded-xl hover:bg-[#128C7E] transition-all shadow-md text-base"
+              >
+                💬 JOIN HUDT NOW
+              </a>
+            </div>
+
             {/* Status Specific Message */}
             <div className="bg-amber-50 border-2 border-amber-200 rounded-3xl p-8">
               {result.status === 'Accepted' && (
                 <div className="text-center">
                   <h4 className="text-2xl font-black text-amber-800 mb-2">🎉 Congratulations!</h4>
-                  <p className="text-amber-700 font-medium italic">Welcome to the HUDT family! Please check your email for onboarding details.</p>
+                  <p className="text-amber-700 font-medium italic">Welcome to the HUDT family! Please join the WhatsApp group for onboarding details.</p>
                 </div>
               )}
               {result.status === 'Audition Scheduled' && (
