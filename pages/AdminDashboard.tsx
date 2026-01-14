@@ -23,7 +23,7 @@ const STATUSES = ['All', 'Submitted', 'Under Review', 'Audition Scheduled', 'Acc
 const DEPARTMENTS = ['All', 'Computer Science', 'Engineering', 'Medicine', 'Law', 'Business Administration', 'Mass Communication', 'Arts', 'Sciences', 'Education', 'Nursing', 'Architecture', 'Pharmacy'];
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, onNavigate }) => {
-    const [activeTab, setActiveTab] = useState<'dashboard' | 'applications'>('dashboard');
+    const [activeTab, setActiveTab] = useState<'dashboard' | 'applications' | 'history'>('dashboard');
     const [stats, setStats] = useState<DashboardStats | null>(null);
     const [applications, setApplications] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -61,19 +61,34 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, onNavigate })
                     setStats(response.stats);
                 }
             } else {
+                // If in history tab, we force filter to Accepted or Not Selected if status is 'All'
+                const effectiveStatus = activeTab === 'history' && statusFilter === 'All'
+                    ? 'Accepted,Not Selected'
+                    : statusFilter;
+
                 const response = await getApplications({
                     search,
-                    status: statusFilter,
+                    status: activeTab === 'history' && statusFilter === 'All' ? undefined : statusFilter,
                     department: departmentFilter,
                     page,
                     limit: 10,
                     sortBy: 'submitted_at',
                     sortOrder: 'desc',
                 });
+
                 if (response.success) {
-                    setApplications(response.applications);
+                    let filteredApps = response.applications;
+
+                    // Client-side status filter for history if necessary
+                    if (activeTab === 'history' && statusFilter === 'All') {
+                        filteredApps = filteredApps.filter((a: any) =>
+                            a.status === 'Accepted' || a.status === 'Not Selected'
+                        );
+                    }
+
+                    setApplications(filteredApps);
                     setTotalPages(response.totalPages);
-                    setTotalCount(response.totalCount);
+                    setTotalCount(activeTab === 'history' && statusFilter === 'All' ? filteredApps.length : response.totalCount);
                 }
             }
         } catch (err: any) {
@@ -202,7 +217,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, onNavigate })
                 <div className="max-w-7xl mx-auto px-4">
                     <div className="flex gap-8">
                         <button
-                            onClick={() => setActiveTab('dashboard')}
+                            onClick={() => { setActiveTab('dashboard'); setStatusFilter('All'); }}
                             className={`py-4 border-b-4 font-bold transition-colors ${activeTab === 'dashboard'
                                 ? 'border-amber-500 text-purple-900'
                                 : 'border-transparent text-gray-400 hover:text-gray-600'
@@ -211,13 +226,22 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, onNavigate })
                             📊 Dashboard
                         </button>
                         <button
-                            onClick={() => setActiveTab('applications')}
+                            onClick={() => { setActiveTab('applications'); setStatusFilter('All'); }}
                             className={`py-4 border-b-4 font-bold transition-colors ${activeTab === 'applications'
                                 ? 'border-amber-500 text-purple-900'
                                 : 'border-transparent text-gray-400 hover:text-gray-600'
                                 }`}
                         >
-                            📋 Applications
+                            📋 Active
+                        </button>
+                        <button
+                            onClick={() => { setActiveTab('history'); setStatusFilter('All'); }}
+                            className={`py-4 border-b-4 font-bold transition-colors ${activeTab === 'history'
+                                ? 'border-amber-500 text-purple-900'
+                                : 'border-transparent text-gray-400 hover:text-gray-600'
+                                }`}
+                        >
+                            📜 History
                         </button>
                     </div>
                 </div>
@@ -307,26 +331,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, onNavigate })
                                 </table>
                             </div>
                         </div>
-
-                        {/* Top Talents */}
-                        <div className="bg-white rounded-2xl shadow-lg p-6">
-                            <h3 className="text-xl font-black text-purple-900 mb-6">Top Talents</h3>
-                            <div className="flex flex-wrap gap-3">
-                                {Object.entries(stats.talentCounts)
-                                    .sort((a, b) => (b[1] as number) - (a[1] as number))
-                                    .slice(0, 10)
-                                    .map(([talent, count]) => (
-                                        <div key={talent} className="bg-purple-50 border-2 border-purple-200 px-4 py-2 rounded-xl">
-                                            <span className="font-bold text-purple-900">{talent}</span>
-                                            <span className="ml-2 bg-purple-900 text-white px-2 py-0.5 rounded-full text-xs font-bold">{count}</span>
-                                        </div>
-                                    ))}
-                            </div>
-                        </div>
                     </div>
                 )}
 
-                {!loading && !error && activeTab === 'applications' && (
+                {(activeTab === 'applications' || activeTab === 'history') && !loading && !error && (
                     <div className="space-y-6 animate-fade-in">
                         {/* Filters */}
                         <div className="bg-white rounded-2xl shadow-lg p-6">
@@ -342,16 +350,32 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, onNavigate })
                                         className="w-full p-3 rounded-xl border-2 border-gray-200 focus:border-purple-500 outline-none"
                                     />
                                 </div>
-                                <div>
-                                    <label className="block text-sm font-bold text-gray-700 mb-2">Status</label>
-                                    <select
-                                        value={statusFilter}
-                                        onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-                                        className="p-3 rounded-xl border-2 border-gray-200 focus:border-purple-500 outline-none font-semibold"
-                                    >
-                                        {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-                                    </select>
-                                </div>
+                                {activeTab === 'applications' && (
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-700 mb-2">Status</label>
+                                        <select
+                                            value={statusFilter}
+                                            onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+                                            className="p-3 rounded-xl border-2 border-gray-200 focus:border-purple-500 outline-none font-semibold"
+                                        >
+                                            {STATUSES.filter(s => !['Accepted', 'Not Selected'].includes(s)).map((s) => <option key={s} value={s}>{s}</option>)}
+                                        </select>
+                                    </div>
+                                )}
+                                {activeTab === 'history' && (
+                                    <div>
+                                        <label className="block text-sm font-bold text-gray-700 mb-2">Outcome</label>
+                                        <select
+                                            value={statusFilter}
+                                            onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+                                            className="p-3 rounded-xl border-2 border-gray-200 focus:border-purple-500 outline-none font-semibold"
+                                        >
+                                            <option value="All">All Outcomes</option>
+                                            <option value="Accepted">Accepted</option>
+                                            <option value="Not Selected">Not Selected</option>
+                                        </select>
+                                    </div>
+                                )}
                                 <div>
                                     <label className="block text-sm font-bold text-gray-700 mb-2">Department</label>
                                     <select
@@ -413,7 +437,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, onNavigate })
                         {/* Applications Table */}
                         <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
                             <div className="p-4 border-b border-gray-100 flex items-center justify-between">
-                                <p className="font-bold text-gray-500">{totalCount} applications found</p>
+                                <p className="font-bold text-gray-500">{totalCount} {activeTab === 'history' ? 'historical' : 'active'} records</p>
                             </div>
                             <div className="overflow-x-auto">
                                 <table className="w-full">
@@ -429,182 +453,162 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, onNavigate })
                                             </th>
                                             <th className="py-3 px-4 text-left font-bold text-gray-500 uppercase text-xs">Ref #</th>
                                             <th className="py-3 px-4 text-left font-bold text-gray-500 uppercase text-xs">Name</th>
-                                            <th className="py-3 px-4 text-left font-bold text-gray-500 uppercase text-xs">Email</th>
                                             <th className="py-3 px-4 text-left font-bold text-gray-500 uppercase text-xs">Dept</th>
                                             <th className="py-3 px-4 text-left font-bold text-gray-500 uppercase text-xs">Status</th>
+                                            <th className="py-3 px-4 text-left font-bold text-gray-500 uppercase text-xs">Chat</th>
                                             <th className="py-3 px-4 text-left font-bold text-gray-500 uppercase text-xs">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {applications.map((app) => (
-                                            <tr key={app.id} className="border-b border-gray-50 hover:bg-gray-50">
-                                                <td className="py-3 px-4">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={selectedIds.includes(app.id)}
-                                                        onChange={() => toggleSelect(app.id)}
-                                                        className="w-5 h-5 rounded accent-purple-600"
-                                                    />
-                                                </td>
-                                                <td className="py-3 px-4 font-mono font-bold text-purple-600">{app.refNumber}</td>
-                                                <td className="py-3 px-4 font-semibold">{app.fullName}</td>
-                                                <td className="py-3 px-4 text-gray-600 text-sm">{app.email}</td>
-                                                <td className="py-3 px-4 text-gray-600 text-sm">{app.department}</td>
-                                                <td className="py-3 px-4">
-                                                    <select
-                                                        value={app.status}
-                                                        onChange={(e) => handleStatusUpdate(app.id, e.target.value)}
-                                                        className={`px-3 py-1 rounded-lg text-xs font-bold border ${getStatusBadgeClass(app.status)}`}
-                                                    >
-                                                        {STATUSES.filter(s => s !== 'All').map((s) => (
-                                                            <option key={s} value={s}>{s}</option>
-                                                        ))}
-                                                    </select>
-                                                </td>
-                                                <td className="py-3 px-4">
-                                                    <div className="flex gap-2">
-                                                        <button
-                                                            onClick={() => setEditingApp(app)}
-                                                            className="px-3 py-1 bg-blue-100 text-blue-700 rounded-lg text-xs font-bold hover:bg-blue-200"
-                                                        >
-                                                            View
-                                                        </button>
-                                                        <button
-                                                            onClick={() => setShowDeleteConfirm(app.id)}
-                                                            className="px-3 py-1 bg-red-100 text-red-700 rounded-lg text-xs font-bold hover:bg-red-200"
-                                                        >
-                                                            Delete
-                                                        </button>
-                                                    </div>
-                                                </td>
+                                        {applications.length === 0 ? (
+                                            <tr>
+                                                <td colSpan={7} className="py-20 text-center text-gray-400 font-bold italic">No records found</td>
                                             </tr>
-                                        ))}
+                                        ) : (
+                                            applications.map((app) => (
+                                                <tr key={app.id} className="border-b border-gray-50 hover:bg-gray-50">
+                                                    <td className="py-3 px-4">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={selectedIds.includes(app.id)}
+                                                            onChange={() => toggleSelect(app.id)}
+                                                            className="w-5 h-5 rounded accent-purple-600"
+                                                        />
+                                                    </td>
+                                                    <td className="py-3 px-4 font-mono font-bold text-purple-600">{app.refNumber}</td>
+                                                    <td className="py-3 px-4 font-semibold">{app.fullName}</td>
+                                                    <td className="py-3 px-4 text-gray-600 text-sm">{app.department}</td>
+                                                    <td className="py-3 px-4">
+                                                        <select
+                                                            value={app.status}
+                                                            onChange={(e) => handleStatusUpdate(app.id, e.target.value)}
+                                                            className={`px-3 py-1 rounded-lg text-xs font-bold border ${getStatusBadgeClass(app.status)}`}
+                                                        >
+                                                            {STATUSES.filter(s => s !== 'All').map((s) => (
+                                                                <option key={s} value={s}>{s}</option>
+                                                            ))}
+                                                        </select>
+                                                    </td>
+                                                    <td className="py-3 px-4">
+                                                        <a
+                                                            href={`https://wa.me/${app.phone.replace(/\D/g, '')}`}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="px-3 py-1 bg-green-100 text-green-700 rounded-lg text-xs font-bold hover:bg-green-200 inline-flex items-center gap-1"
+                                                        >
+                                                            <span>💬</span> WhatsApp
+                                                        </a>
+                                                    </td>
+                                                    <td className="py-3 px-4">
+                                                        <div className="flex gap-2">
+                                                            <button
+                                                                onClick={() => setEditingApp(app)}
+                                                                className="px-3 py-1 bg-blue-100 text-blue-700 rounded-lg text-xs font-bold hover:bg-blue-200"
+                                                            >
+                                                                View
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ))
+                                        )}
                                     </tbody>
                                 </table>
                             </div>
 
                             {/* Pagination */}
-                            <div className="p-4 border-t border-gray-100 flex items-center justify-between">
-                                <p className="text-sm text-gray-500">
-                                    Page {page} of {totalPages}
-                                </p>
-                                <div className="flex gap-2">
-                                    <button
-                                        onClick={() => setPage((p) => Math.max(1, p - 1))}
-                                        disabled={page === 1}
-                                        className="px-4 py-2 bg-gray-100 rounded-lg font-semibold disabled:opacity-50"
-                                    >
-                                        Previous
-                                    </button>
-                                    <button
-                                        onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                                        disabled={page === totalPages}
-                                        className="px-4 py-2 bg-gray-100 rounded-lg font-semibold disabled:opacity-50"
-                                    >
-                                        Next
-                                    </button>
+                            {totalPages > 1 && (
+                                <div className="p-4 border-t border-gray-100 flex items-center justify-between">
+                                    <p className="text-sm text-gray-500">
+                                        Page {page} of {totalPages}
+                                    </p>
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={() => setPage((p) => Math.max(1, p - 1))}
+                                            disabled={page === 1}
+                                            className="px-4 py-2 bg-gray-100 rounded-lg font-semibold disabled:opacity-50"
+                                        >
+                                            Previous
+                                        </button>
+                                        <button
+                                            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                                            disabled={page === totalPages}
+                                            className="px-4 py-2 bg-gray-100 rounded-lg font-semibold disabled:opacity-50"
+                                        >
+                                            Next
+                                        </button>
+                                    </div>
                                 </div>
-                            </div>
+                            )}
                         </div>
                     </div>
                 )}
             </div>
 
             {/* View Modal */}
-            {editingApp && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-                        <div className="p-6 border-b border-gray-100 flex items-center justify-between">
-                            <h3 className="text-2xl font-black text-purple-900">{editingApp.refNumber}</h3>
-                            <button onClick={() => setEditingApp(null)} className="text-gray-400 hover:text-gray-600 text-2xl">✕</button>
-                        </div>
-                        <div className="p-6 space-y-4">
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="bg-gray-50 p-4 rounded-xl">
-                                    <p className="text-xs uppercase text-gray-400 font-bold mb-1">Full Name</p>
-                                    <p className="font-bold text-gray-800">{editingApp.fullName}</p>
+            {
+                editingApp && (
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                        <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                            <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+                                <h3 className="text-2xl font-black text-purple-900">{editingApp.refNumber}</h3>
+                                <button onClick={() => setEditingApp(null)} className="text-gray-400 hover:text-gray-600 text-2xl">✕</button>
+                            </div>
+                            <div className="p-6 space-y-4">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="bg-gray-50 p-4 rounded-xl">
+                                        <p className="text-xs uppercase text-gray-400 font-bold mb-1">Full Name</p>
+                                        <p className="font-bold text-gray-800">{editingApp.fullName}</p>
+                                    </div>
+                                    <div className="bg-gray-50 p-4 rounded-xl">
+                                        <p className="text-xs uppercase text-gray-400 font-bold mb-1">Email</p>
+                                        <p className="font-bold text-gray-800">{editingApp.email}</p>
+                                    </div>
+                                    <div className="bg-gray-50 p-4 rounded-xl">
+                                        <p className="text-xs uppercase text-gray-400 font-bold mb-1">Phone</p>
+                                        <p className="font-bold text-gray-800">{editingApp.phone}</p>
+                                    </div>
+                                    <div className="bg-gray-50 p-4 rounded-xl">
+                                        <p className="text-xs uppercase text-gray-400 font-bold mb-1">Department</p>
+                                        <p className="font-bold text-gray-800">{editingApp.department}</p>
+                                    </div>
+                                    <div className="bg-gray-50 p-4 rounded-xl">
+                                        <p className="text-xs uppercase text-gray-400 font-bold mb-1">Level</p>
+                                        <p className="font-bold text-gray-800">{editingApp.level}</p>
+                                    </div>
+                                    <div className="bg-gray-50 p-4 rounded-xl">
+                                        <p className="text-xs uppercase text-gray-400 font-bold mb-1">Status</p>
+                                        <span className={`px-3 py-1 rounded-full text-sm font-bold ${getStatusBadgeClass(editingApp.status)}`}>
+                                            {editingApp.status}
+                                        </span>
+                                    </div>
                                 </div>
                                 <div className="bg-gray-50 p-4 rounded-xl">
-                                    <p className="text-xs uppercase text-gray-400 font-bold mb-1">Email</p>
-                                    <p className="font-bold text-gray-800">{editingApp.email}</p>
+                                    <p className="text-xs uppercase text-gray-400 font-bold mb-2">Talents</p>
+                                    <div className="flex flex-wrap gap-2">
+                                        {editingApp.talents?.map((t: string) => (
+                                            <span key={t} className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm font-bold">{t}</span>
+                                        ))}
+                                    </div>
                                 </div>
                                 <div className="bg-gray-50 p-4 rounded-xl">
-                                    <p className="text-xs uppercase text-gray-400 font-bold mb-1">Phone</p>
-                                    <p className="font-bold text-gray-800">{editingApp.phone}</p>
-                                </div>
-                                <div className="bg-gray-50 p-4 rounded-xl">
-                                    <p className="text-xs uppercase text-gray-400 font-bold mb-1">Department</p>
-                                    <p className="font-bold text-gray-800">{editingApp.department}</p>
-                                </div>
-                                <div className="bg-gray-50 p-4 rounded-xl">
-                                    <p className="text-xs uppercase text-gray-400 font-bold mb-1">Level</p>
-                                    <p className="font-bold text-gray-800">{editingApp.level}</p>
-                                </div>
-                                <div className="bg-gray-50 p-4 rounded-xl">
-                                    <p className="text-xs uppercase text-gray-400 font-bold mb-1">Status</p>
-                                    <span className={`px-3 py-1 rounded-full text-sm font-bold ${getStatusBadgeClass(editingApp.status)}`}>
-                                        {editingApp.status}
-                                    </span>
+                                    <p className="text-xs uppercase text-gray-400 font-bold mb-2">Motivation</p>
+                                    <p className="text-gray-700">{editingApp.motivation}</p>
                                 </div>
                             </div>
-                            <div className="bg-gray-50 p-4 rounded-xl">
-                                <p className="text-xs uppercase text-gray-400 font-bold mb-2">Talents</p>
-                                <div className="flex flex-wrap gap-2">
-                                    {editingApp.talents?.map((t: string) => (
-                                        <span key={t} className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm font-bold">{t}</span>
-                                    ))}
-                                </div>
+                            <div className="p-6 border-t border-gray-100">
+                                <button
+                                    onClick={() => setEditingApp(null)}
+                                    className="w-full py-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl"
+                                >
+                                    Done
+                                </button>
                             </div>
-                            <div className="bg-gray-50 p-4 rounded-xl">
-                                <p className="text-xs uppercase text-gray-400 font-bold mb-2">Motivation</p>
-                                <p className="text-gray-700">{editingApp.motivation}</p>
-                            </div>
-                            {editingApp.experienceDetails && (
-                                <div className="bg-gray-50 p-4 rounded-xl">
-                                    <p className="text-xs uppercase text-gray-400 font-bold mb-2">Experience</p>
-                                    <p className="text-gray-700">{editingApp.experienceDetails}</p>
-                                </div>
-                            )}
-                        </div>
-                        <div className="p-6 border-t border-gray-100">
-                            <button
-                                onClick={() => setEditingApp(null)}
-                                className="w-full py-3 bg-gray-600 hover:bg-gray-700 text-white font-bold rounded-xl"
-                            >
-                                Close
-                            </button>
                         </div>
                     </div>
-                </div>
-            )}
-
-            {/* Delete Confirmation Modal */}
-            {showDeleteConfirm && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 text-center">
-                        <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <span className="text-3xl">⚠️</span>
-                        </div>
-                        <h3 className="text-2xl font-black text-gray-900 mb-2">Delete Application?</h3>
-                        <p className="text-gray-600 mb-6">This action cannot be undone.</p>
-                        <div className="flex gap-4">
-                            <button
-                                onClick={() => setShowDeleteConfirm(null)}
-                                className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={() => handleDelete(showDeleteConfirm)}
-                                className="flex-1 py-3 bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl"
-                            >
-                                Delete
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-        </div>
+                )
+            }
+        </div >
     );
 };
 

@@ -81,9 +81,16 @@ router.post('/', applicationLimiter, async (req, res) => {
             JSON.stringify([{ status: 'Submitted', timestamp: now, updatedBy: 'system' }])
         ]);
 
-        // Send confirmation email
+        // Send confirmation email to applicant
         await sendEmail(result.lastInsertRowid, sanitizedData.email, 'application_received', {
             fullName: sanitizedData.fullName,
+            refNumber
+        });
+
+        // Notify Admin
+        await sendEmail(result.lastInsertRowid, 'Mofosgang123@gmail.com', 'admin_new_application', {
+            fullName: sanitizedData.fullName,
+            department: sanitizedData.department,
             refNumber
         });
 

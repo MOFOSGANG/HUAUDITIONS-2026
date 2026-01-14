@@ -1,15 +1,35 @@
-import { runQuery } from '../config/database.js';
+import nodemailer from 'nodemailer';
+import { runQuery, getAll } from '../config/database.js';
 
 /**
- * Simulated email service - logs emails to database
+ * Real Email Service using Nodemailer
  */
+
+// Create reusable transporter
+const createTransporter = () => {
+    const config = {
+        host: process.env.SMTP_HOST,
+        port: parseInt(process.env.SMTP_PORT || '587'),
+        secure: process.env.SMTP_SECURE === 'true',
+        auth: {
+            user: process.env.SMTP_USER,
+            pass: process.env.SMTP_PASS,
+        },
+    };
+
+    if (!config.auth.user || !config.auth.pass) {
+        return null;
+    }
+
+    return nodemailer.createTransport(config);
+};
 
 const EMAIL_TEMPLATES = {
     application_received: {
         subject: 'Your HUDT Application - {refNumber}',
         body: `Dear {fullName},
 
-Thank you for applying to join Hallmark University Drama Troops (HUDT)!
+Thank you for applying to join Hallmark University Drama Troops (HUDT) 2026!
 
 Your application has been received and your reference number is: {refNumber}
 
@@ -69,7 +89,7 @@ Your talent and passion truly shone during the audition process, and we can't wa
 Next Steps:
 1. Orientation Meeting: [Date TBD]
 2. Complete member registration form
-3. Join our WhatsApp group for updates
+3. Join our WhatsApp group for updates: https://chat.whatsapp.com/JIyFdFsw3t5JT2C7vEBYoq
 4. Get your official HUDT member badge
 
 Your Reference Number: {refNumber}
@@ -77,7 +97,39 @@ Your Reference Number: {refNumber}
 Welcome to the stage where stars are born! 🌟
 
 With excitement,
-HUDT Leadership Team`
+HUDT Leadership Team`,
+        html: `
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; rounded-lg: 12px;">
+            <div style="text-align: center; margin-bottom: 30px;">
+                <h1 style="color: #581c87; margin-bottom: 10px;">CONGRATULATIONS! 🎭✨</h1>
+                <p style="font-size: 18px; color: #4a5568;">Welcome to the HUDT Family</p>
+            </div>
+            
+            <p>Dear <strong>{fullName}</strong>,</p>
+            
+            <p>We are thrilled to inform you that you have been <strong>ACCEPTED</strong> into Hallmark University Drama Troops!</p>
+            
+            <p>Your talent and passion truly shone during the audition process, and we can't wait to have you as part of our family.</p>
+            
+            <div style="background-color: #f7fafc; padding: 20px; border-radius: 8px; margin: 25px 0;">
+                <h3 style="margin-top: 0; color: #2d3748;">Next Steps:</h3>
+                <ol style="color: #4a5568; line-height: 1.6;">
+                    <li>Orientation Meeting: <strong>[Date TBD]</strong></li>
+                    <li>Complete member registration form</li>
+                    <li><strong>Join our WhatsApp group for updates:</strong></li>
+                </ol>
+                <div style="text-align: center; margin-top: 20px;">
+                    <a href="https://chat.whatsapp.com/JIyFdFsw3t5JT2C7vEBYoq" style="background-color: #25d366; color: white; padding: 12px 24px; text-decoration: none; border-radius: 50px; font-weight: bold; display: inline-block;">Join WhatsApp Group</a>
+                </div>
+            </div>
+            
+            <p style="color: #718096; font-size: 14px;">Your Reference Number: <strong>{refNumber}</strong></p>
+            
+            <p style="margin-top: 30px;">Welcome to the stage where stars are born! 🌟</p>
+            
+            <p>With excitement,<br><strong>HUDT Leadership Team</strong></p>
+        </div>
+        `
     },
 
     waitlisted: {
@@ -133,23 +185,42 @@ HUDT Recruitment Team`
     custom: {
         subject: '{subject}',
         body: '{body}'
+    },
+
+    admin_new_application: {
+        subject: '🔔 New HUDT Application: {fullName}',
+        body: `Admin Notification,
+
+A new application has been submitted for HUDT Auditions 2026.
+
+Applicant: {fullName}
+Department: {department}
+Ref Number: {refNumber}
+
+Please log in to the Admin Dashboard to review the details and schedule an audition.
+
+Dashboard Link: {dashboardUrl}
+`
     }
 };
 
 /**
- * Send an email (simulated - saves to database)
+ * Send an email
  */
 export const sendEmail = async (applicationId, recipient, templateType, data) => {
     const template = EMAIL_TEMPLATES[templateType] || EMAIL_TEMPLATES.custom;
 
     let subject = template.subject;
     let body = template.body;
+    let html = template.html || null;
 
     // Replace placeholders
     const placeholders = {
         fullName: data.fullName || 'Applicant',
         refNumber: data.refNumber || 'N/A',
         auditionSlot: data.auditionSlot || 'TBD',
+        department: data.department || 'N/A',
+        dashboardUrl: process.env.FRONTEND_URL ? `${process.env.FRONTEND_URL}/admin` : 'http://localhost:5173/admin',
         subject: data.subject || '',
         body: data.body || ''
     };
@@ -157,22 +228,43 @@ export const sendEmail = async (applicationId, recipient, templateType, data) =>
     for (const [key, value] of Object.entries(placeholders)) {
         subject = subject.replace(new RegExp(`{${key}}`, 'g'), value);
         body = body.replace(new RegExp(`{${key}}`, 'g'), value);
+        if (html) {
+            html = html.replace(new RegExp(`{${key}}`, 'g'), value);
+        }
     }
 
     const now = new Date().toISOString();
+    const transporter = createTransporter();
 
     try {
+        if (transporter) {
+            await transporter.sendMail({
+                from: `"HUDT Auditions" <${process.env.SMTP_USER}>`,
+                to: recipient,
+                subject: subject,
+                text: body,
+                ...(html ? { html } : {})
+            });
+            console.log(`✅ Success: Real email sent to ${recipient}`);
+        } else {
+            console.log(`⚠️ Simulation Mode: Email to ${recipient} logged to DB only.`);
+        }
+
         runQuery(`
-      INSERT INTO email_logs (application_id, recipient, subject, body, sent_at, status)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `, [applicationId, recipient, subject, body, now, 'sent']);
+            INSERT INTO email_logs (application_id, recipient, subject, body, sent_at, status)
+            VALUES (?, ?, ?, ?, ?, ?)
+        `, [applicationId, recipient, subject, body, now, 'sent']);
 
-        console.log(`📧 Email sent to ${recipient}: ${subject}`);
-
-        return { success: true, message: 'Email sent successfully' };
+        return { success: true, message: 'Email processed successfully' };
     } catch (error) {
-        console.error('Email send error:', error);
-        return { success: false, error: 'Failed to send email' };
+        console.error('❌ Email Error:', error);
+
+        runQuery(`
+            INSERT INTO email_logs (application_id, recipient, subject, body, sent_at, status)
+            VALUES (?, ?, ?, ?, ?, ?)
+        `, [applicationId, recipient, subject, body, now, 'failed']);
+
+        return { success: false, error: 'Failed to send actual email' };
     }
 };
 
